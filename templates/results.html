@@ -1,0 +1,320 @@
+<!DOCTYPE html> 
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analysis Results - CSV + Google Chat Processor</title>
+    <style>
+        body{font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;margin:0;padding:20px;background-color:#f5f5f5;}
+        .container{max-width:2000px;margin:0 auto;background:white;padding:30px;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,0.1);}
+        h1{color:#333;text-align:center;margin-bottom:10px;}
+        .analysis-info-header{text-align:center;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;padding:20px;border-radius:8px;margin-bottom:30px;}
+        .nav-links{text-align:center;margin-bottom:30px;}
+        .nav-links a,.nav-links button{display:inline-block;margin:0 10px;padding:10px 20px;background-color:#007bff;color:white;text-decoration:none;border-radius:5px;border:none;cursor:pointer;}
+        .nav-links a:hover,.nav-links button:hover{background-color:#0056b3;}
+
+        .results-table{width:100%;border-collapse:collapse;margin-top:10px;font-size:10px;}
+        .results-table th,.results-table td{padding:6px;text-align:center;border:1px solid #ddd;}
+        .results-table th{background-color:#f8f9fa;font-weight:bold;color:#333;position:sticky;top:0;z-index:2;font-size:9px;}
+        .filter-row th{background-color:#ffffff;position:sticky;top:30px;z-index:2;}
+        .filter-select{width:100%;font-size:9px;padding:2px 4px;border:1px solid #ccc;border-radius:3px;background:#fff;}
+        .results-table td:first-child{text-align:left;font-weight:bold;background-color:#f9f9f9;min-width:120px;font-size:11px;}
+        .results-table td:nth-child(2){text-align:center;font-size:9px;color:#666;min-width:70px;}
+        .schedule-column{background-color:#f0f8ff !important;font-weight:bold;color:#0066cc;}
+
+        .time-cell{font-family:'Courier New',monospace;font-weight:bold;display:inline-block;min-width:68px;padding:4px 6px;border-radius:4px;}
+        .time-cell.on-time{background-color:#d4edda;color:#155724;}
+        .time-cell.early{background-color:#cce5ff;color:#004085;}
+        .time-cell.late-minor{background-color:#fff3cd;color:#856404;}
+        .time-cell.late-major{background-color:#f8d7da;color:#721c24;}
+        .time-cell.very-early{background-color:#e7f1ff;color:#0c5460;}
+        .time-cell.no-time{background-color:#f8f9fa;color:#6c757d;font-style:italic;}
+        .time-status{display:block;font-size:7px;margin-top:2px;opacity:.8;}
+
+        /* Break cells with inner capsule */
+        .break-cell{display:inline-block;min-width:68px;padding:4px 6px;border-radius:4px;font-weight:bold;font-size:9px;}
+        .break-cell.break-normal{background-color:#ffffff !important;color:#333;}
+        .break-cell.break-warning{background-color:#fff3cd !important;color:#856404;}   /* amarillo (61–65) */
+        .break-cell.break-exceeded{background-color:#f8d7da !important;color:#721c24;}  /* rojo (≥66) */
+
+        .status-badge{padding:2px 6px;border-radius:3px;font-weight:bold;font-size:9px;}
+        .status-success{background-color:#d4edda;color:#155724;}
+        .status-danger{background-color:#f8d7da;color:#721c24;}
+
+        /* Leyendas bonitas */
+        .legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin:18px 0 26px;}
+        .legend-card{background:linear-gradient(180deg,#ffffff, #f9fbff);border:1px solid #e6ecff;border-radius:10px;padding:14px 16px;box-shadow:0 2px 10px rgba(0,0,0,.04);}
+        .legend-card h4{margin:0 0 8px 0;color:#334; font-size:14px}
+        .pill{display:inline-block;min-width:54px;padding:3px 6px;border-radius:4px;font-weight:700;font-size:10px;margin:2px 6px 2px 0;}
+        .note{font-size:12px;color:#555;margin-top:6px}
+
+        /* Botones inferiores: restaurar look */
+        .export-actions{display:flex;gap:12px;justify-content:center;align-items:center;margin-top:30px;flex-wrap:wrap;}
+        .btn{display:inline-block;padding:12px 24px;border-radius:8px;border:none;cursor:pointer;text-decoration:none;color:#fff;font-size:14px;font-weight:600;box-shadow:0 4px 12px rgba(0,0,0,.12);transition:transform .08s ease;}
+        .btn:active{transform:translateY(1px);}
+        .btn-primary{background:linear-gradient(135deg,#007bff,#0056b3);}
+        .btn-export{background:linear-gradient(135deg,#17a2b8,#138496);}
+        .btn:hover{filter:brightness(1.05);}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Complete Analysis Results with Break Tracking</h1>
+        <div class="analysis-info-header">
+            Analysis Completed Successfully — Standardized Time Format (HH:MM 24h) + Break Tracking
+        </div>
+
+        <div class="nav-links">
+            <a href="{{ url_for('index') }}">&larr; New Analysis</a>
+            <button type="button" id="reset-filters">Reset filters</button>
+        </div>
+
+        <!-- Leyendas separadas: IN / BREAK / OUT -->
+        <div class="legend">
+            <div class="legend-card">
+                <h4>In columns (TCW In / Google Chat In)</h4>
+                <span class="pill time-cell on-time">On time</span>
+                <span class="pill time-cell early">Early</span>
+                <span class="pill time-cell late-minor">Minor late</span>
+                <span class="pill time-cell late-major">Major late</span>
+                <div class="note">Green = on time. Blue = arrived before schedule. Yellow/Red = late (small/large).</div>
+            </div>
+            <div class="legend-card">
+                <h4>Break columns (TCW Break / Google Chat Break)</h4>
+                <span class="pill break-cell break-normal">≤ 60 min</span>
+                <span class="pill break-cell break-warning">61–65 min</span>
+                <span class="pill break-cell break-exceeded">≥ 66 min</span>
+                <div class="note">White = within 1 hour. Yellow = slightly over (≤5 min). Red = exceeds 5 minutes.</div>
+            </div>
+            <div class="legend-card">
+                <h4>Out columns (TCW Out / Google Chat Logout)</h4>
+                <span class="pill time-cell on-time">On time</span>
+                <span class="pill time-cell early">After</span>
+                <span class="pill time-cell late-minor">Minor early</span>
+                <span class="pill time-cell late-major">Major early</span>
+                <div class="note">Green = on time. Blue = left after schedule. Yellow/Red = early (small/large).</div>
+            </div>
+        </div>
+
+        <!-- Resultados -->
+        <h3>Attendance Control - Complete Analysis with Break Tracking</h3>
+        {% if results and results|length > 0 %}
+        <div class="table-responsive">
+            <table class="results-table">
+                <thead>
+                    <tr>
+                        <th>Employee</th>
+                        <th>Date</th>
+                        <th>Schedule Start</th>
+                        <th>Schedule End</th>
+                        <th>TCW In</th>
+                        <th>Google Chat In</th>
+                        <th>TCW Break</th>
+                        <th>Google Chat Break</th>
+                        <th>TCW Out</th>
+                        <th>Google Chat Logout</th>
+                        <th>Result</th>
+                    </tr>
+                    <tr class="filter-row">
+                        <th><select class="filter-select" disabled><option>All</option></select></th>
+                        <th><select class="filter-select" disabled><option>All</option></select></th>
+                        <th><select class="filter-select" disabled><option>All</option></select></th>
+                        <th><select class="filter-select" disabled><option>All</option></select></th>
+
+                        <!-- time filters -->
+                        <th>
+                            <select class="filter-select" data-col="4" data-type="time">
+                                <option value="all">All</option>
+                                <option value="on-time">On time (green)</option>
+                                <option value="early">Early (blue)</option>
+                                <option value="late-minor">Minor late (yellow)</option>
+                                <option value="late-major">Major late (red)</option>
+                            </select>
+                        </th>
+                        <th>
+                            <select class="filter-select" data-col="5" data-type="time">
+                                <option value="all">All</option>
+                                <option value="on-time">On time (green)</option>
+                                <option value="early">Early (blue)</option>
+                                <option value="late-minor">Minor late (yellow)</option>
+                                <option value="late-major">Major late (red)</option>
+                            </select>
+                        </th>
+
+                        <!-- break filters -->
+                        <th>
+                            <select class="filter-select" data-col="6" data-type="break">
+                                <option value="all">All</option>
+                                <option value="break-normal">Within limit (≤60)</option>
+                                <option value="break-warning">Slightly over (61–65)</option>
+                                <option value="break-exceeded">Exceeds 5 min (≥66)</option>
+                            </select>
+                        </th>
+                        <th>
+                            <select class="filter-select" data-col="7" data-type="break">
+                                <option value="all">All</option>
+                                <option value="break-normal">Within limit (≤60)</option>
+                                <option value="break-warning">Slightly over (61–65)</option>
+                                <option value="break-exceeded">Exceeds 5 min (≥66)</option>
+                            </select>
+                        </th>
+
+                        <!-- out (time) filters -->
+                        <th>
+                            <select class="filter-select" data-col="8" data-type="time">
+                                <option value="all">All</option>
+                                <option value="on-time">On time (green)</option>
+                                <option value="early">After (blue)</option>
+                                <option value="late-minor">Minor early (yellow)</option>
+                                <option value="late-major">Major early (red)</option>
+                            </select>
+                        </th>
+                        <th>
+                            <select class="filter-select" data-col="9" data-type="time">
+                                <option value="all">All</option>
+                                <option value="on-time">On time (green)</option>
+                                <option value="early">After (blue)</option>
+                                <option value="late-minor">Minor early (yellow)</option>
+                                <option value="late-major">Major early (red)</option>
+                            </select>
+                        </th>
+
+                        <!-- result filter -->
+                        <th>
+                            <select class="filter-select" data-col="10" data-type="result">
+                                <option value="all">All</option>
+                                <option value="No errors">No errors</option>
+                                <option value="Must check">Must check</option>
+                            </select>
+                        </th>
+                    </tr>
+                </thead>
+
+                <tbody id="results-tbody">
+                    {% for row in results %}
+                    {% set has_problem =
+                        (row.csv_in_class in ['late-major','late-minor']) or
+                        (row.mbox_login_class in ['late-major','late-minor']) or
+                        (row.csv_out_class in ['late-major','late-minor']) or
+                        (row.mbox_logout_class in ['late-major','late-minor']) or
+                        (row.tcw_break_class in ['break-warning','break-exceeded']) or
+                        (row.mbox_break_class in ['break-warning','break-exceeded'])
+                    %}
+                    <tr data-result="{{ 'Must check' if has_problem else 'No errors' }}">
+                        <td>{{ row.name }}</td>
+                        <td>{{ row.date }}</td>
+                        <td class="schedule-column">{{ row.schedule_start }}</td>
+                        <td class="schedule-column">{{ row.schedule_end }}</td>
+
+                        <td>
+                            <div class="time-cell {{ row.csv_in_class }}">
+                                {{ row.csv_in if row.csv_in else '-' }}
+                                {% if row.csv_in_status %}<span class="time-status">{{ row.csv_in_status }}</span>{% endif %}
+                            </div>
+                        </td>
+                        <td>
+                            <div class="time-cell {{ row.mbox_login_class }}">
+                                {{ row.mbox_login if row.mbox_login else '-' }}
+                                {% if row.mbox_login_status %}<span class="time-status">{{ row.mbox_login_status }}</span>{% endif %}
+                            </div>
+                        </td>
+
+                        <td>
+                            <div class="break-cell {{ row.tcw_break_class }}">
+                                {{ row.tcw_break if row.tcw_break else '-' }}
+                                {% if row.tcw_break_status %}<div class="time-status">{{ row.tcw_break_status }}</div>{% endif %}
+                            </div>
+                        </td>
+                        <td>
+                            <div class="break-cell {{ row.mbox_break_class }}">
+                                {{ row.mbox_break if row.mbox_break else '-' }}
+                                {% if row.mbox_break_status %}<div class="time-status">{{ row.mbox_break_status }}</div>{% endif %}
+                            </div>
+                        </td>
+
+                        <td>
+                            <div class="time-cell {{ row.csv_out_class }}">
+                                {{ row.csv_out if row.csv_out else '-' }}
+                                {% if row.csv_out_status %}<span class="time-status">{{ row.csv_out_status }}</span>{% endif %}
+                            </div>
+                        </td>
+                        <td>
+                            <div class="time-cell {{ row.mbox_logout_class }}">
+                                {{ row.mbox_logout if row.mbox_logout else '-' }}
+                                {% if row.mbox_logout_status %}<span class="time-status">{{ row.mbox_logout_status }}</span>{% endif %}
+                            </div>
+                        </td>
+
+                        <td>
+                            {% if has_problem %}
+                                <span class="status-badge status-danger">Must check</span>
+                            {% else %}
+                                <span class="status-badge status-success">No errors</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+            <div class="empty-category">No results to display.</div>
+        {% endif %}
+
+        <!-- Botones inferiores con estilo restaurado -->
+        <div class="export-actions">
+            <a href="{{ url_for('index') }}" class="btn btn-primary">Process New Files</a>
+            <button class="btn btn-export" onclick="exportToCSV()">Export Complete Analysis</button>
+        </div>
+    </div>
+
+    <script>
+        function exportToCSV(){
+            let csvContent="data:text/csv;charset=utf-8,";
+            csvContent+="Employee,Date,Schedule_Start,Schedule_End,TCW_In,Google_Chat_In,TCW_Break,Google_Chat_Break,TCW_Out,Google_Chat_Logout,Result\n";
+            {% for row in results %}
+            {% set has_problem =
+                (row.csv_in_class in ['late-major','late-minor']) or
+                (row.mbox_login_class in ['late-major','late-minor']) or
+                (row.csv_out_class in ['late-major','late-minor']) or
+                (row.mbox_logout_class in ['late-major','late-minor']) or
+                (row.tcw_break_class in ['break-warning','break-exceeded']) or
+                (row.mbox_break_class in ['break-warning','break-exceeded'])
+            %}
+            csvContent+="{{ row.name }},{{ row.date }},{{ row.schedule_start }},{{ row.schedule_end }},{{ row.csv_in or '' }},{{ row.mbox_login or '' }},{{ row.tcw_break or '' }},{{ row.mbox_break or '' }},{{ row.csv_out or '' }},{{ row.mbox_logout or '' }},{{ 'Must check' if has_problem else 'No errors' }}\n";
+            {% endfor %}
+            const link=document.createElement("a");
+            link.href=encodeURI(csvContent);
+            link.download="complete_attendance_analysis_with_breaks.csv";
+            document.body.appendChild(link);link.click();document.body.removeChild(link);
+        }
+
+        // Filtros (una sola selección)
+        const filterSelects=document.querySelectorAll('.filter-select[data-col]');
+        const tbody=document.getElementById('results-tbody');
+
+        function cellMatches(td,type,val){
+            if(val==='all') return true;
+            if(type==='time'){ const el=td.querySelector('.time-cell'); return el&&el.classList.contains(val); }
+            if(type==='break'){ const el=td.querySelector('.break-cell'); return el&&el.classList.contains(val); }
+            if(type==='result'){ const row=td.parentElement; return row.dataset.result===val; }
+            return true;
+        }
+        function applyFilters(){
+            const active=[...filterSelects].map(s=>({col:+s.dataset.col,type:s.dataset.type,val:s.value}));
+            [...tbody.rows].forEach(r=>{
+                let vis=true;
+                for(const f of active){
+                    if(f.val==='all') continue;
+                    const td=r.cells[f.col];
+                    if(!cellMatches(td,f.type,f.val)){ vis=false; break; }
+                }
+                r.style.display=vis?'':'none';
+            });
+        }
+        filterSelects.forEach(s=>s.addEventListener('change',applyFilters));
+        document.getElementById('reset-filters').addEventListener('click',()=>{filterSelects.forEach(s=>s.value='all');applyFilters();});
+        applyFilters();
+    </script>
+</body>
+</html>
